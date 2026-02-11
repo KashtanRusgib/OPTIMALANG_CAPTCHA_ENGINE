@@ -6,6 +6,11 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
     # Allow manual trigger
+    inputs:
+      branch:
+        description: 'Branch to sync with main'
+        required: false
+        default: ''
 
 jobs:
   sync:
@@ -18,6 +23,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.inputs.branch || github.ref }}
       
       - name: Configure Git
         run: |
@@ -34,8 +40,16 @@ jobs:
       - name: Check if current branch is behind main
         id: check
         run: |
-          CURRENT_BRANCH=$(git branch --show-current)
+          # Get the branch name, handling both normal and detached HEAD states
+          if git symbolic-ref -q HEAD > /dev/null; then
+            CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
+          else
+            # In detached HEAD state, use github.ref_name
+            CURRENT_BRANCH="${{ github.ref_name }}"
+          fi
+          
           echo "current_branch=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
+          echo "Current branch: $CURRENT_BRANCH"
           
           if [ "$CURRENT_BRANCH" = "main" ]; then
             echo "Already on main branch, pulling latest changes..."
@@ -65,7 +79,9 @@ jobs:
       - name: Push changes
         if: steps.check.outputs.needs_sync == 'true'
         run: |
-          git push origin ${{ steps.check.outputs.current_branch }}
+          BRANCH_TO_PUSH="${{ steps.check.outputs.current_branch }}"
+          echo "Pushing to origin/$BRANCH_TO_PUSH..."
+          git push origin HEAD:refs/heads/$BRANCH_TO_PUSH
       
       - name: Summary
         run: |

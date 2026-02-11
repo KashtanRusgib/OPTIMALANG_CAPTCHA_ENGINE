@@ -76,6 +76,21 @@ read -p "Choose an option [1-4]: " choice
 case $choice in
     1)
         echo ""
+        # Check for uncommitted changes
+        if ! git diff-index --quiet HEAD 2>/dev/null; then
+            echo "⚠️  Warning: You have uncommitted changes in your working directory"
+            echo ""
+            git status --short
+            echo ""
+            read -p "Do you want to continue with the merge? [y/N]: " confirm
+            if [[ ! $confirm =~ ^[Yy]$ ]]; then
+                echo "❌ Operation cancelled"
+                echo "💡 Commit or stash your changes first:"
+                echo "   git stash"
+                echo "   git commit -am 'Your commit message'"
+                exit 0
+            fi
+        fi
         echo "🔄 Merging main into $CURRENT_BRANCH..."
         git merge origin/main -m "Merge main into $CURRENT_BRANCH"
         echo "✅ Merge complete"
@@ -85,6 +100,18 @@ case $choice in
         ;;
     2)
         echo ""
+        # Check for uncommitted changes (required for rebase)
+        if ! git diff-index --quiet HEAD 2>/dev/null; then
+            echo "❌ Error: You have uncommitted changes in your working directory"
+            echo "Rebase requires a clean working tree."
+            echo ""
+            git status --short
+            echo ""
+            echo "💡 Please commit or stash your changes first:"
+            echo "   git stash        # Temporarily save changes"
+            echo "   git commit -am 'Your commit message'"
+            exit 1
+        fi
         echo "🔄 Rebasing $CURRENT_BRANCH onto main..."
         git rebase origin/main
         echo "✅ Rebase complete"
