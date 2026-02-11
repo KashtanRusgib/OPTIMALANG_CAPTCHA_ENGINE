@@ -17,6 +17,9 @@ jobs:
     name: Sync branches with main
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # Required to push changes back to repository
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
