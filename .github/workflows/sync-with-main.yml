@@ -1,0 +1,95 @@
+name: Sync with Main Branch
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Allow manual trigger
+    inputs:
+      branch:
+        description: 'Branch to sync with main'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    name: Sync branches with main
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # Required to push changes back to repository
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.inputs.branch || github.ref }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Fetch latest changes from main
+        run: |
+          echo "Fetching latest changes from origin..."
+          git fetch origin main
+          echo "Latest main branch commit:"
+          git log origin/main -1 --oneline
+      
+      - name: Check if current branch is behind main
+        id: check
+        run: |
+          # Get the branch name, handling both normal and detached HEAD states
+          if git symbolic-ref -q HEAD > /dev/null; then
+            CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
+          else
+            # In detached HEAD state, use github.ref_name
+            CURRENT_BRANCH="${{ github.ref_name }}"
+          fi
+          
+          echo "current_branch=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
+          echo "Current branch: $CURRENT_BRANCH"
+          
+          if [ "$CURRENT_BRANCH" = "main" ]; then
+            echo "Already on main branch, pulling latest changes..."
+            git pull origin main
+            echo "needs_sync=false" >> $GITHUB_OUTPUT
+          else
+            BEHIND=$(git rev-list --count HEAD..origin/main)
+            echo "Current branch is $BEHIND commits behind main"
+            echo "behind_count=$BEHIND" >> $GITHUB_OUTPUT
+            
+            if [ "$BEHIND" -gt 0 ]; then
+              echo "needs_sync=true" >> $GITHUB_OUTPUT
+            else
+              echo "needs_sync=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+      
+      - name: Merge main into current branch
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          echo "Merging main into ${{ steps.check.outputs.current_branch }}..."
+          git merge origin/main -m "Merge main into ${{ steps.check.outputs.current_branch }}" || {
+            echo "Merge conflict detected. Manual intervention required."
+            exit 1
+          }
+      
+      - name: Push changes
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          BRANCH_TO_PUSH="${{ steps.check.outputs.current_branch }}"
+          echo "Pushing to origin/$BRANCH_TO_PUSH..."
+          git push origin HEAD:refs/heads/$BRANCH_TO_PUSH
+      
+      - name: Summary
+        run: |
+          if [ "${{ steps.check.outputs.needs_sync }}" = "true" ]; then
+            echo "✅ Branch synchronized with main successfully"
+          else
+            echo "✅ Branch is already up to date with main"
+          fi
